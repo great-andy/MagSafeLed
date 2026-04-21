@@ -1,0 +1,64 @@
+#!/bin/zsh
+
+APPNAME='MagSafeLed'
+BINDIR='/usr/local/bin'
+
+DAEMON="at.GreatAndy.$APPNAME"
+DAEMONPLIST="$DAEMON.plist"
+TEMP_PLIST="/tmp/$DAEMONPLIST"
+
+# Get color option
+COLOR_OPTIONS='{"🟢 Green   (--green)", "➖ No action"}'
+COLOR_CHOICE=$(osascript -e "set clist to $COLOR_OPTIONS" -e "set default_val to item 1 of clist" \
+               -e "tell app (path to frontmost application as text) to choose from list clist \
+               with title \"MagSafeLed configuration\" with prompt \"Select LED color if not charging\" default items {default_val}")
+if [ "$COLOR_CHOICE" = "false" ]; then
+    echo "Cancel install."
+    exit 1
+fi
+
+# Get sleep option
+SLEEP_OPTIONS='{"🟡 Off if not charging   (--full)", "⚪ Always off                (--sleep)", "➖ No action"}'
+SLEEP_CHOICE=$(osascript -e "set clist to $SLEEP_OPTIONS" -e "set default_val to item 1 of clist" \
+               -e "tell app (path to frontmost application as text) to choose from list clist \
+               with title \"MagSafeLed configuration\" with prompt \"Select LED status when display is sleeping\" default items {default_val}")
+if [ "$SLEEP_CHOICE" = "false" ]; then
+    echo "Cancel install."
+    exit 1
+fi
+
+if [[ "$COLOR_CHOICE" == *"No action"* && "$SLEEP_CHOICE" == *"No action"* ]]; then
+    echo "Cancel, no action selected."
+    exit 1
+fi
+
+# Evaluate arguments
+if [[ "$COLOR_CHOICE" == *"--green"* ]]; then
+    ARGUMENTS+=$'\n		<string>--green</string>'
+fi
+if [[ "$SLEEP_CHOICE" == *"--full"* ]]; then
+    ARGUMENTS+=$'\n		<string>--full</string>'
+fi
+if [[ "$SLEEP_CHOICE" == *"--sleep"* ]]; then
+    ARGUMENTS+=$'\n		<string>--sleep</string>'
+fi
+
+# Create daemon plist file
+cat <<EOF > $TEMP_PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>$DAEMON</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>$BINDIR/$APPNAME</string>$ARGUMENTS
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+</dict>
+</plist>
+EOF

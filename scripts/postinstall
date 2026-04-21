@@ -1,0 +1,32 @@
+#!/bin/zsh
+
+APPNAME='MagSafeLed'
+
+DAEMONDIR='/Library/LaunchDaemons'
+DAEMON="at.GreatAndy.$APPNAME"
+DAEMONPLIST="$DAEMON.plist"
+DAEMONDEST="$DAEMONDIR/$DAEMONPLIST"
+TEMP_PLIST="/tmp/$DAEMONPLIST"
+
+if [ -f "$TEMP_PLIST" ]; then
+    # Stop daemon if already running
+    launchctl bootout system "$DAEMONDEST" 2>/dev/null
+
+    # Install daemon plist
+    mv "$TEMP_PLIST" "$DAEMONDEST"
+    chown root:wheel "$DAEMONDEST"
+    chmod 644 "$DAEMONDEST"
+
+    # Start daemon
+    if launchctl bootstrap system "$DAEMONDEST" 2>/dev/null; then
+        echo "Installed LaunchDaemon $DAEMON"
+    else
+        echo "Unable to install LaunchDaemon $DAEMON"
+        exit 1
+    fi
+else
+    echo "Error: missing file $TEMP_PLIST"
+    exit 1
+fi
+
+exit 0

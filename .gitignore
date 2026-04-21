@@ -1,0 +1,6 @@
+xcuserdata/
+build/
+*.o
+MagSafeLed
+*.pkg
+payload/
