@@ -1,4 +1,5 @@
-[![License](https://badgen.net)](LICENSE) [![Release](https://badgen.net)](../../releases/latest) ![macOS](https://badgen.net) ![Apple Silicon](https://badgen.net)
+[![Release](https://img.shields.io/github/release/great-andy/MagSafeLed.svg)](../../releases/latest)
+[![License](https://img.shields.io/github/license/great-andy/MagSafeLed.svg)](LICENSE)
 
 # MagSafe LED Daemon (Apple Silicon)
 
