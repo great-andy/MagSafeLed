@@ -58,6 +58,10 @@
             argument = "-fg"
             isEnabled = "YES">
          </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-sg"
+            isEnabled = "NO">
+         </CommandLineArgument>
       </CommandLineArguments>
    </LaunchAction>
    <ProfileAction

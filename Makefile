@@ -1,16 +1,18 @@
 # Project names
 NAME			:= MagSafeLed
 IDENTIFIER		:= at.GreatAndy.MagSafeLed
-# Version (Tag + commit-counter, exluding hash, including dirty-flag)
+# Version (Tag + commit-counter, excluding hash, including dirty-flag)
 GIT_VER 		:= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/-g[0-9a-f]\{7,40\}//')
-VERSION 		:= $(if $(GIT_VER),$(GIT_VER),V0.0.0-unknown)
+VERSION 		:= $(if $(GIT_VER),$(GIT_VER),V0.0-unknown)
 INSTALL_PATH	:= /usr/local/bin
 
 # Compiler & flags
 CXX			:= clang++
-CXXFLAGS	:= -O3 -DNDEBUG -flto -fno-exceptions -fobjc-arc -Wall -std=c++17 -arch arm64
-CXXFLAGS	+= -DAPP_VERSION=\"$(VERSION)\"
-LDFLAGS 	:= -framework AppKit -framework IOKit
+MIN_OS      := -mmacosx-version-min=14.6
+ARCHS       := -arch arm64  # Target only arm64 architecture
+CLFLAGS		:= -O3 -flto -fno-exceptions -fobjc-arc -std=c++20 $(MIN_OS) $(ARCHS)
+CXXFLAGS	:= $(CLFLAGS) -Wall -DNDEBUG -DAPP_VERSION=\"$(VERSION)\"
+LDFLAGS 	:= $(CLFLAGS) -framework AppKit -framework IOKit
 
 # Folders
 SRC_DIR		:= src
@@ -29,7 +31,7 @@ all: $(TARGET)
 
 # Link objects
 $(TARGET): $(OBJS)
-	$(CXX) $(OBJS) $(LDFLAGS) -o $(BUILD_DIR)/$(NAME)
+	$(CXX) $(OBJS) $(LDFLAGS) -o $(TARGET)
 
 # Compile sources
 $(BUILD_DIR)/%.cpp.o: $(SRC_DIR)/%.cpp
@@ -44,7 +46,7 @@ $(BUILD_DIR)/%.mm.o: $(SRC_DIR)/%.mm
 pkg: all
 	@rm -rf $(PAYLOAD_DIR)
 	@mkdir -p $(PAYLOAD_DIR)$(INSTALL_PATH)
-	@strip -x $(BUILD_DIR)/$(NAME) -o $(PAYLOAD_DIR)$(INSTALL_PATH)/$(NAME)
+	@strip -x $(TARGET) -o $(PAYLOAD_DIR)$(INSTALL_PATH)/$(NAME)
 	@cp scripts/uninstall.sh $(PAYLOAD_DIR)$(INSTALL_PATH)/$(NAME)_uninstall
 	@chmod +x $(PAYLOAD_DIR)$(INSTALL_PATH)/$(NAME)_uninstall
 	@chmod +x $(SCRIPT_DIR)/preinstall $(SCRIPT_DIR)/postinstall

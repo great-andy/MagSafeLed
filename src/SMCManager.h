@@ -1,6 +1,6 @@
 /*
  * Apple System Management Control (SMC) Manager
- * Copyright (C) 2006 devnull 
+ * Copyright (C) 2006 devnull
  * Portions Copyright (C) 2013 Michael Wilber
  * C++ Version Copyright (C) 2026 Great Andy
  *
@@ -21,10 +21,8 @@
 #pragma once
 
 #include <IOKit/IOTypes.h>
-#include <os/lock.h>
-
-#include <cstring>
-#include <map>
+#include <string>
+#include <unordered_map>
 
 struct SMCKeyDataVersion
 {
@@ -59,7 +57,7 @@ public:
     SMCBytes();
 
     size_t SetHexString(const std::string& hexString);
-    void PrintBytesHex(size_t numBytes) const;
+    std::string GetHexString(size_t numBytes, const std::string_view& separator = "") const;
 
     UInt8 mData[32];
 };
@@ -85,13 +83,56 @@ class SMCValue
 public:
     std::string mKey;
     std::string mDataType;
+    UInt8       mDataAttributes = 0;
 
-    UInt32      mDataSize = 0;
+protected:
+    size_t      mDataSize = 0;
     SMCBytes    mBytes;
+
+public:
+    bool IsKeySizeValid() const;
+    bool HasData() const;
+    size_t GetDataSize() const;
+    size_t SetDataSize(size_t size);
+    const SMCBytes& GetDataBytes() const;
+
+    size_t SetHexString(const std::string& hexString);
+    size_t SetData(const SMCBytes& data, size_t size);
+    void SetDataBytes(const SMCBytes& dataBytes);
+
+    UInt32 GetUInt32FromType() const;
+    SInt32 GetSInt32FromType() const;
+    UInt64 GetUInt64FromType() const;
+    SInt64 GetSInt64FromType() const;
+
+    float GetFloatFromType() const;
+    double GetDoubleFromType() const;
+
+    std::string GetString() const;
+    UInt8 GetUInt8() const;
+    UInt16 GetUInt16() const;
+    UInt32 GetUInt32() const;
+    UInt64 GetUInt64() const;
+    SInt8 GetSInt8() const;
+    SInt16 GetSInt16() const;
+    SInt32 GetSInt32() const;
+    SInt64 GetSInt64() const;
+    float GetFloat() const;
+
+    bool IsMSB() const;
+    bool IsUnsignedInt() const;
+    bool IsSignedInt() const;
+
+    static constexpr UInt8 AttributeFlagLSB = 0x04;
 
     static constexpr std::string_view DATATYPE_UINT8  = "ui8 ";
     static constexpr std::string_view DATATYPE_UINT16 = "ui16";
     static constexpr std::string_view DATATYPE_UINT32 = "ui32";
+    static constexpr std::string_view DATATYPE_UINT64 = "ui64";
+    static constexpr std::string_view DATATYPE_SINT8  = "si8 ";
+    static constexpr std::string_view DATATYPE_SINT16 = "si16";
+    static constexpr std::string_view DATATYPE_SINT32 = "si32";
+    static constexpr std::string_view DATATYPE_SINT64 = "si64";
 
     static constexpr std::string_view DATATYPE_FLT  = "flt ";
     static constexpr std::string_view DATATYPE_FP1F = "fp1f";
@@ -115,35 +156,25 @@ public:
     static constexpr std::string_view DATATYPE_SPB4 = "spb4";
     static constexpr std::string_view DATATYPE_SPF0 = "spf0";
 
-    static constexpr std::string_view DATATYPE_SI8  = "si8 ";
-    static constexpr std::string_view DATATYPE_SI16 = "si16";
+    static constexpr std::string_view DATATYPE_IOFT = "ioft";
 
+    static constexpr std::string_view DATATYPE_FLAG = "flag";
+    static constexpr std::string_view DATATYPE_CH8P = "ch8*";
     static constexpr std::string_view DATATYPE_PWM  = "{pwm";
+    static constexpr std::string_view DATATYPE_HEX  = "hex_";
 
-    void PrintUInt() const;
-    void PrintFLT() const;
-    void PrintFP1F() const;
-    void PrintFP4C() const;
-    void PrintFP5B() const;
-    void PrintFP6A() const;
-    void PrintFP79() const;
-    void PrintFP88() const;
-    void PrintFPA6() const;
-    void PrintFPC4() const;
-    void PrintFPE2() const;
-    void PrintSP1E() const;
-    void PrintSP3C() const;
-    void PrintSP4B() const;
-    void PrintSP5A() const;
-    void PrintSP69() const;
-    void PrintSP78() const;
-    void PrintSP87() const;
-    void PrintSP96() const;
-    void PrintSPB4() const;
-    void PrintSPF0() const;
-    void PrintSI8() const;
-    void PrintSI16() const;
+    void PrintUInt32(UInt32 value) const;
+    void PrintUInt64(UInt64 value) const;
+    void PrintSInt32(SInt32 value) const;
+    void PrintSInt64(SInt64 value) const;
+
+    void PrintFloat(float value) const;
+    void PrintDouble(double value) const;
+
+    void PrintFlag() const;
+    void PrintCh8p() const;
     void PrintPWM() const;
+
     void PrintBytesHex() const;
 
     void Print() const;
@@ -152,16 +183,25 @@ public:
 class SMCUtils
 {
 public:
-    static UInt32 GetUInt32(const std::string& str);
-    static std::string GetString(UInt32 value);
+    static UInt32 StringToUInt32(const std::string& str);
+    static std::string UInt32ToString(UInt32 value);
 
     static SInt32 HexCharToInt(char c);
+    static bool IsKeySizeValid(const std::string& key);
 };
 
 class SMCManager
 {
 public:
     virtual ~SMCManager();
+
+    SMCManager() = default;
+    SMCManager(const SMCManager&) = delete;
+    SMCManager& operator=(const SMCManager&) = delete;
+    SMCManager(SMCManager&&) = delete;
+    SMCManager& operator=(SMCManager&&) = delete;
+
+    static constexpr std::string_view SMCServiceName  = "AppleSMC";
 
     enum SMCSelector
     {
@@ -175,29 +215,29 @@ public:
         SMC_CMD_READ_INDEX   = 8,
         SMC_CMD_READ_KEYINFO = 9,
         SMC_CMD_READ_PLIMIT  = 11,
-        SMC_CMD_READ_VERS    = 12
+        SMC_CMD_READ_VERSION = 12
     };
 
     bool Open();
     void Close();
     bool IsOpen() const;
 
+    bool ReadKey(const std::string& key, SMCValue& returnValue);
     bool WriteKey(const std::string& key, UInt8 value);
     bool WriteKey(const std::string& key, const std::string& hexString);
+    bool WriteValue(const SMCValue& writeValue);
 
-    kern_return_t ReadKey(const std::string& key, SMCValue& returnValue);
+    kern_return_t ReadKeyRaw(const std::string& key, SMCValue& returnValue);
 
     kern_return_t GetKeyInfo(UInt32 key, SMCKeyDataKeyInfo& keyInfo);
 
-    kern_return_t WriteValue(const SMCValue& writeVal);
+    kern_return_t WriteValueRaw(const SMCValue& writeVal);
 
-    kern_return_t IOConnectCall(SMCSelector index, const SMCKeyData& keyData, SMCKeyData& returnData);
+    kern_return_t IOConnectCall(const SMCKeyData& keyData, SMCKeyData& returnData);
 
 protected:
     io_connect_t mConn = 0;
 
     typedef std::unordered_map<UInt32, SMCKeyDataKeyInfo> KeyInfoMapT;
     KeyInfoMapT mCacheItems;
-
-    os_unfair_lock mLock = OS_UNFAIR_LOCK_INIT;
 };

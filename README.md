@@ -3,7 +3,7 @@
 
 # MagSafe LED Daemon (Apple Silicon)
 
-A macOS tool to control the MagSafe LED on Apple Silicon Macs (M1, M2, M3, etc.).
+A macOS tool to control the MagSafe LED on Apple Silicon Macs.
 It adjusts the MagSafe light based on screen activity and charging status.
 
 macOS sets the MagSafe LED to green only when the battery reaches 100%. If a charging limit (e.g., 80%) is active, the LED remains orange indefinitely. This tool sets the LED to green as soon as the battery stops charging.
@@ -12,7 +12,7 @@ Additionally, if your MacBook screen is off or the lid is closed, the MagSafe LE
 
 ## Features
 - **Apple Silicon Native:** Specifically designed for modern Mac hardware.
-- **Sleep Mode:** Turns off the LED when the screen is off.
+- **Display Sleep Mode:** Turns off the LED when the screen is off.
 - **Smart Logic:** Disables the LED only when the battery is not charging and the screen is off.
 - **Color Control:** Set a green LED when charging is complete or paused by macOS.
 
@@ -35,14 +35,14 @@ You can easily manage the service without using the terminal:
 ## Installation
 
 ### 1. Download (Recommended)
-Download the latest `MagSafeLed_V1.0.pkg` from the **[Releases](../../releases)** section.
+Download the latest `MagSafeLed_V1.1.pkg` from the **[Releases](../../releases)** section.
 
 ### 2. Fix Permissions (Important)
 Since this tool uses IOKit for hardware access and is not notarized, macOS will block the execution by default.
 To fix this, run the following command in your terminal after downloading:
 
 ```bash
-xattr -c ~/Downloads/MagSafeLed_V1.0.pkg
+xattr -c ~/Downloads/MagSafeLed_V1.1.pkg
 ```
 
 ### 3. Install
@@ -85,6 +85,9 @@ A: Accessing the System Management Controller (SMC) via IOKit to control hardwar
 
 **Q: Does it work on Intel Macs?**  
 A: No, this version is specifically built for the Apple Silicon SMC architecture.  
+
+**Q: The LED is on (green) in sleep mode**  
+A: Navigate to System Settings > Battery > Options and toggle on **Prevent automatic sleeping on power adapter when the display is off**.
 
 **Q: The LED doesn't change immediately?**  
 A: The daemon reacts to system events. Try locking your screen or toggling the power cable to trigger an update.

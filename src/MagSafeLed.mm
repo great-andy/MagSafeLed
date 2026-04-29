@@ -19,6 +19,8 @@
 #import "MagSafeLed.h"
 #import "SMCManager.h"
 
+#import <charconv>
+#import <errno.h>
 #import <getopt.h>
 
 #import <IOKit/ps/IOPowerSources.h>
@@ -37,6 +39,8 @@ enum SMC_ACLC_Led
 @implementation MagSafeLed
 {
     NSString* mAppName;
+    ::dispatch_source_t mSigtermSource;
+    int mLockFileDescriptor;
 
     BOOL mOptLedSleep;
     BOOL mOptLedSleepFull;
@@ -58,6 +62,7 @@ enum SMC_ACLC_Led
 - (void)applicationDidFinishLaunching:(NSNotification*)aNotification
 {
     mAppName = [[NSRunningApplication currentApplication] localizedName];
+    mLockFileDescriptor = -1;
 
     BOOL isOptSet = mOptLedSleep || mOptLedSleepFull || mOptLedGreen;
     if (mOptHelp || mOptInvalid)
@@ -77,21 +82,28 @@ enum SMC_ACLC_Led
     }
     else
     {
-        if ([self SendSignalToOtherInstances])
+        if ([self SendSignalToLockedInstance])
         {
             printf("Stopping MagSafeLed daemon\n");
         }
 
         if (isOptSet)
         {
-            if (mSMCManager.Open())
+            if ([self WaitForInstanceLock])
             {
-                printf("Starting MagSafeLed daemon\n");
+                if (mSMCManager.Open())
+                {
+                    printf("Starting MagSafeLed daemon\n");
 
-                [self SetSignalHandler];
-                [self SetupCallbacks];
-                [self SetupNotificationObservers];
-                [self UpdatePowerSources];
+                    [self SetSignalHandler];
+                    [self SetupCallbacks];
+                    [self SetupNotificationObservers];
+                    [self UpdatePowerSources];
+                }
+                else
+                {
+                    isOptSet = NO;
+                }
             }
             else
             {
@@ -113,6 +125,8 @@ enum SMC_ACLC_Led
         mSMCManager.WriteKey("ACLC", SMC_ACLC_LED_SYSTEM);
         mSMCManager.Close();
     }
+
+    [self ReleaseInstanceLock];
 }
 
 - (void)ParseOptions:(int)argc argV:(char* const*)argv
@@ -202,42 +216,135 @@ enum SMC_ACLC_Led
     return (::geteuid() == 0);
 }
 
-void SignalHandler(int signal)
-{
-    if (signal == SIGTERM)
-    {
-        printf("Terminate MagSafeLed daemon\n");
-        [NSApp terminate:nil];
-    }
-}
-
 - (BOOL)SetSignalHandler
 {
-    struct sigaction sa;
-    sa.sa_handler = SignalHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    return (sigaction(SIGTERM, &sa, nullptr) != -1);
-}
-
-- (BOOL)SendSignalToOtherInstances
-{
-    BOOL isRunning = NO;
-    pid_t myPid = [[NSRunningApplication currentApplication] processIdentifier];
-    NSArray<NSRunningApplication*>* apps = [[NSWorkspace sharedWorkspace] runningApplications];
-    for (NSRunningApplication* app in apps)
+    if (mSigtermSource == nil)
     {
-        if ([mAppName isEqualToString:[app localizedName]])
+        if (::signal(SIGTERM, SIG_IGN) != SIG_ERR)
         {
-            pid_t otherPid = [app processIdentifier];
-            if (otherPid != myPid)
+            mSigtermSource = ::dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, ::dispatch_get_main_queue());
+            if (mSigtermSource == nil)
             {
-                kill(otherPid, SIGTERM);
-                isRunning = YES;
+                ::signal(SIGTERM, SIG_DFL);
+            }
+            else
+            {
+                __weak MagSafeLed* weakSelf = self;
+                ::dispatch_source_set_event_handler(mSigtermSource, ^{
+                    printf("Terminate MagSafeLed daemon\n");
+                    [weakSelf terminate];
+                });
+                ::dispatch_resume(mSigtermSource);
             }
         }
     }
-    return isRunning;
+    return (mSigtermSource != nil);
+}
+
+- (void)terminate
+{
+    [NSApp terminate:nil];
+}
+
+- (NSString*)GetLockFilePath
+{
+    return [NSTemporaryDirectory() stringByAppendingPathComponent:@"MagSafeLed.lock"];
+}
+
+- (BOOL)WaitForInstanceLock
+{
+    BOOL success = NO;
+    for (int i = 0; i < 30; i++)
+    {
+        if ([self AcquireInstanceLock])
+        {
+            success = YES;
+            break;
+        }
+        ::usleep(100000);
+    }
+    return success;
+}
+
+- (BOOL)AcquireInstanceLock
+{
+    if (mLockFileDescriptor < 0)
+    {
+        NSString* lockFilePath = [self GetLockFilePath];
+        int fd = ::open(lockFilePath.fileSystemRepresentation, O_CREAT | O_RDWR, 0644);
+        if (fd == -1)
+        {
+            printf("Error: Unable to open lock file %s (%d)\n", lockFilePath.fileSystemRepresentation, errno);
+        }
+        else
+        {
+            if (::flock(fd, LOCK_EX | LOCK_NB) != 0)
+            {
+                ::close(fd);
+            }
+            else
+            {
+                ::ftruncate(fd, 0);
+                ::dprintf(fd, "%d\n", ::getpid());
+                mLockFileDescriptor = fd;
+            }
+        }
+    }
+    return (mLockFileDescriptor >= 0);
+}
+
+- (void)ReleaseInstanceLock
+{
+    if (mLockFileDescriptor >= 0)
+    {
+        ::flock(mLockFileDescriptor, LOCK_UN);
+        ::close(mLockFileDescriptor);
+        mLockFileDescriptor = -1;
+    }
+}
+
+- (pid_t)GetLockedProcessIdentifier
+{
+    pid_t otherPid = 0;
+    NSString* lockFilePath = [self GetLockFilePath];
+    int fd = ::open(lockFilePath.fileSystemRepresentation, O_CREAT | O_RDWR, 0644);
+    if (fd != -1)
+    {
+        if (::flock(fd, LOCK_EX | LOCK_NB) == 0)
+        {
+            ::flock(fd, LOCK_UN);
+        }
+        else if (errno == EWOULDBLOCK)
+        {
+            ::lseek(fd, 0, SEEK_SET);
+            char buffer[32] = {0};
+            ssize_t bytesRead = ::read(fd, buffer, sizeof(buffer) - 1);
+            if (bytesRead > 0)
+            {
+                auto result = std::from_chars(buffer, buffer + bytesRead, otherPid);
+                if (result.ec != std::errc())
+                {
+                    otherPid = 0;
+                }
+            }
+        }
+        ::close(fd);
+    }
+    return otherPid;
+}
+
+- (BOOL)SendSignalToLockedInstance
+{
+    BOOL success = NO;
+    pid_t otherPid = [self GetLockedProcessIdentifier];
+    if ((otherPid > 0) && (otherPid != ::getpid()))
+    {
+        if (::kill(otherPid, SIGTERM) == 0)
+        {
+            success = YES;
+        }
+    }
+    return success;
 }
 
 void PowerSourceChangedCallback(void* context)
@@ -272,6 +379,16 @@ void PowerSourceChangedCallback(void* context)
                selector:@selector(ScreensDidWake:)
                    name:NSWorkspaceScreensDidWakeNotification
                  object:nil];
+
+    [center addObserver:self
+               selector:@selector(WillSleep:)
+                   name:NSWorkspaceWillSleepNotification
+                 object:nil];
+
+    [center addObserver:self
+               selector:@selector(DidWake:)
+                   name:NSWorkspaceDidWakeNotification
+                 object:nil];
 }
 
 - (void)ScreensDidSleep:(NSNotification*)notification
@@ -286,19 +403,39 @@ void PowerSourceChangedCallback(void* context)
     [self UpdateMagSafeLed];
 }
 
+- (void)WillSleep:(NSNotification*)notification
+{
+    NSLog(@"WillSleepNotification, update LED");
+    [self UpdateMagSafeLed];
+}
+
+- (void)DidWake:(NSNotification*)notification
+{
+    NSLog(@"DidWakeNotification, update LED");
+    [self UpdateMagSafeLed];
+}
+
 - (void)UpdatePowerSources
 {
     CFTypeRef snapshot = IOPSCopyPowerSourcesInfo();
     if (snapshot != NULL)
     {
         NSArray* sources = (__bridge_transfer NSArray*)IOPSCopyPowerSourcesList(snapshot);
-        for (NSDictionary* dict in sources)
+        for (id source in sources)
         {
-            mBatteryPercent = [dict[@kIOPSCurrentCapacityKey] intValue];
-            mIsOnAC = [dict[@kIOPSPowerSourceStateKey] isEqualToString:@kIOPSACPowerValue];
-            mIsBatteryCharging = [dict[@kIOPSIsChargingKey] boolValue];
-            mIsBatteryFull = [dict[@kIOPSIsChargedKey] boolValue];
-            [self UpdateMagSafeLed];
+            NSDictionary* dict = (__bridge NSDictionary*)IOPSGetPowerSourceDescription(snapshot, (__bridge CFTypeRef)source);
+            if (dict != nil)
+            {
+                NSString* transportType = dict[@kIOPSTransportTypeKey];
+                if ([transportType isEqualToString:@kIOPSInternalType])
+                {
+                    mBatteryPercent = [dict[@kIOPSCurrentCapacityKey] intValue];
+                    mIsOnAC = [dict[@kIOPSPowerSourceStateKey] isEqualToString:@kIOPSACPowerValue];
+                    mIsBatteryCharging = [dict[@kIOPSIsChargingKey] boolValue];
+                    mIsBatteryFull = [dict[@kIOPSIsChargedKey] boolValue];
+                    [self UpdateMagSafeLed];
+                }
+            }
         }
         CFRelease(snapshot);
     }
@@ -310,7 +447,7 @@ void PowerSourceChangedCallback(void* context)
     {
         SMC_ACLC_Led led = SMC_ACLC_LED_SYSTEM;
 
-        BOOL isBatteryFull = (mIsBatteryFull || !mIsBatteryCharging);
+        BOOL isBatteryFull = (mIsBatteryFull || !mIsBatteryCharging || (mBatteryPercent > 99));
         if (mOptLedGreen)
         {
             if (isBatteryFull)

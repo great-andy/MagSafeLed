@@ -21,6 +21,7 @@
 #include "SMCManager.h"
 
 #include <IOKit/IOKitLib.h>
+#include <format>
 
 #pragma mark SMCBytes
 
@@ -48,18 +49,25 @@ size_t SMCBytes::SetHexString(const std::string& hexString)
         }
         else
         {
-            numBytes = std::min(numBytes / 2, sizeof(mData));
-            for (size_t i = 0; i < numBytes; i++)
+            if ((numBytes > (sizeof(SMCBytes::mData) * 2)) || ((numBytes & 1) != 0))
             {
-                SInt32 val1 = SMCUtils::HexCharToInt(hexString[i * 2]);
-                SInt32 val2 = SMCUtils::HexCharToInt(hexString[(i * 2) + 1]);
-                if ((val1 < 0) || (val2 < 0))
+                numBytes = 0;
+            }
+            else
+            {
+                numBytes /= 2;
+                for (size_t i = 0; i < numBytes; i++)
                 {
-                    numBytes = 0;
-                }
-                else
-                {
-                    mData[i] = (val1 << 4) + val2;
+                    SInt32 val1 = SMCUtils::HexCharToInt(hexString[i * 2]);
+                    SInt32 val2 = SMCUtils::HexCharToInt(hexString[(i * 2) + 1]);
+                    if ((val1 < 0) || (val2 < 0))
+                    {
+                        numBytes = 0;
+                    }
+                    else
+                    {
+                        mData[i] = (val1 << 4) + val2;
+                    }
                 }
             }
         }
@@ -67,266 +75,409 @@ size_t SMCBytes::SetHexString(const std::string& hexString)
     return numBytes;
 }
 
-void SMCBytes::PrintBytesHex(size_t numBytes) const
+std::string SMCBytes::GetHexString(size_t numBytes, const std::string_view& separator) const
 {
-    printf("(bytes");
+    std::string str;
     numBytes = std::min(numBytes, sizeof(mData));
-    for (size_t i = 0; i < numBytes; i++)
+    if (numBytes > 0)
     {
-        printf(" %02x", UInt8(mData[i]));
+        size_t expectedSize = (numBytes * 2) + ((numBytes - 1) * separator.length());
+        str.reserve(expectedSize);
+
+        for (size_t i = 0; i < numBytes; i++)
+        {
+            if (i > 0)
+            {
+                str.append(separator);
+            }
+            std::format_to(std::back_inserter(str), "{:02x}", mData[i]);
+        }
     }
-    printf(")\n");
+    return str;
 }
 
 #pragma mark SMCValue
 
-void SMCValue::PrintUInt() const
+bool SMCValue::IsKeySizeValid() const
 {
-    printf("%u ", SMCUtils::GetUInt32(std::string(reinterpret_cast<const char*>(mBytes.mData), mDataSize)));
+    return SMCUtils::IsKeySizeValid(mKey);
 }
 
-void SMCValue::PrintFLT() const
+bool SMCValue::HasData() const
 {
+    return (mDataSize > 0);
+}
+
+size_t SMCValue::GetDataSize() const
+{
+    return mDataSize;
+}
+
+const SMCBytes& SMCValue::GetDataBytes() const
+{
+    return mBytes;
+}
+
+size_t SMCValue::SetDataSize(size_t size)
+{
+    mDataSize = std::min(size, sizeof(mBytes.mData));
+    return mDataSize;
+}
+
+size_t SMCValue::SetHexString(const std::string& hexString)
+{
+    mDataSize = mBytes.SetHexString(hexString);
+    return mDataSize;
+}
+
+size_t SMCValue::SetData(const SMCBytes& bytes, size_t size)
+{
+    SetDataSize(size);
+    std::memcpy(mBytes.mData, bytes.mData, mDataSize);
+    return mDataSize;
+}
+
+void SMCValue::SetDataBytes(const SMCBytes& dataBytes)
+{
+    mBytes = dataBytes;
+}
+
+UInt32 SMCValue::GetUInt32FromType() const
+{
+    UInt32 result = 0;
+    if (mDataType == DATATYPE_UINT8)
+        result = GetUInt8();
+    else if (mDataType == DATATYPE_UINT16)
+        result = GetUInt16();
+    else if (mDataType == DATATYPE_UINT32)
+        result = GetUInt32();
+    return result;
+}
+
+SInt32 SMCValue::GetSInt32FromType() const
+{
+    UInt32 result = 0;
+    if (mDataType == DATATYPE_SINT8)
+        result = GetSInt8();
+    else if (mDataType == DATATYPE_SINT16)
+        result = GetSInt16();
+    else if (mDataType == DATATYPE_SINT32)
+        result = GetSInt32();
+    return result;
+}
+
+UInt64 SMCValue::GetUInt64FromType() const
+{
+    UInt64 result = 0;
+    if (mDataType == DATATYPE_UINT64)
+        result = GetUInt64();
+    else
+        result = GetUInt32FromType();
+    return result;
+}
+
+SInt64 SMCValue::GetSInt64FromType() const
+{
+    UInt64 result = 0;
+    if (mDataType == DATATYPE_SINT64)
+        result = GetSInt64();
+    else
+        result = GetSInt32FromType();
+    return result;
+}
+
+float SMCValue::GetFloatFromType() const
+{
+    float result = 0;
+    if (mDataType == DATATYPE_FLT)
+        result = GetFloat();
+    else if (mDataType == DATATYPE_FP1F)
+        result = GetUInt16() / 32768.0;
+    else if (mDataType == DATATYPE_FP4C)
+        result = GetUInt16() / 4096.0;
+    else if (mDataType == DATATYPE_FP5B)
+        result = GetUInt16() / 2048.0;
+    else if (mDataType == DATATYPE_FP6A)
+        result = GetUInt16() / 1024.0;
+    else if (mDataType == DATATYPE_FP79)
+        result = GetUInt16() / 512.0;
+    else if (mDataType == DATATYPE_FP88)
+        result = GetUInt16() / 256.0;
+    else if (mDataType == DATATYPE_FPA6)
+        result = GetUInt16() / 64.0;
+    else if (mDataType == DATATYPE_FPC4)
+        result = GetUInt16() / 16.0;
+    else if (mDataType == DATATYPE_FPE2)
+        result = GetUInt16() / 4.0;
+    else if (mDataType == DATATYPE_SP1E)
+        result = GetSInt16() / 16384.0;
+    else if (mDataType == DATATYPE_SP3C)
+        result = GetSInt16() / 4096.0;
+    else if (mDataType == DATATYPE_SP4B)
+        result = GetSInt16() / 2048.0;
+    else if (mDataType == DATATYPE_SP5A)
+        result = GetSInt16() / 1024.0;
+    else if (mDataType == DATATYPE_SP69)
+        result = GetSInt16() / 512.0;
+    else if (mDataType == DATATYPE_SP78)
+        result = GetSInt16() / 256.0;
+    else if (mDataType == DATATYPE_SP87)
+        result = GetSInt16() / 128.0;
+    else if (mDataType == DATATYPE_SP96)
+        result = GetSInt16() / 64.0;
+    else if (mDataType == DATATYPE_SPB4)
+        result = GetSInt16() / 16.0;
+    else if (mDataType == DATATYPE_SPF0)
+        result = GetSInt16();
+    else if (IsSignedInt())
+        result = GetSInt64FromType();
+    else if (IsUnsignedInt())
+        result = GetUInt64FromType();
+    return result;
+}
+
+double SMCValue::GetDoubleFromType() const
+{
+    double result = 0;
+    if (mDataType == DATATYPE_IOFT)
+        result = GetSInt64() / 65536.0;
+    else if (IsSignedInt())
+        result = GetSInt64FromType();
+    else if (IsUnsignedInt())
+        result = GetUInt64FromType();
+    else
+        result = GetFloatFromType();
+    return result;
+}
+
+std::string SMCValue::GetString() const
+{
+    size_t numBytes = std::min(mDataSize, sizeof(mBytes.mData));
+    return std::string(reinterpret_cast<const char*>(mBytes.mData), numBytes);
+}
+
+UInt8 SMCValue::GetUInt8() const
+{
+    UInt8 value = 0;
+    if (mDataSize == sizeof(UInt8))
+    {
+        std::memcpy(&value, mBytes.mData, sizeof(value));
+    }
+    return value;
+}
+
+UInt16 SMCValue::GetUInt16() const
+{
+    UInt16 value = 0;
+    if (mDataSize == sizeof(UInt16))
+    {
+        std::memcpy(&value, mBytes.mData, sizeof(value));
+        if (IsMSB())
+        {
+            value = ntohs(value);
+        }
+    }
+    return value;
+}
+
+UInt32 SMCValue::GetUInt32() const
+{
+    UInt32 value = 0;
+    if (mDataSize == sizeof(UInt32))
+    {
+        std::memcpy(&value, mBytes.mData, sizeof(value));
+        if (IsMSB())
+        {
+            value = ntohl(value);
+        }
+    }
+    return value;
+}
+
+UInt64 SMCValue::GetUInt64() const
+{
+    UInt64 value = 0;
+    if (mDataSize == sizeof(UInt64))
+    {
+        std::memcpy(&value, mBytes.mData, sizeof(value));
+        if (IsMSB())
+        {
+            value = ntohll(value);
+        }
+    }
+    return value;
+}
+
+SInt8 SMCValue::GetSInt8() const
+{
+    return std::bit_cast<SInt8>(GetUInt8());
+}
+
+SInt16 SMCValue::GetSInt16() const
+{
+    return std::bit_cast<SInt16>(GetUInt16());
+}
+
+SInt32 SMCValue::GetSInt32() const
+{
+    return std::bit_cast<SInt32>(GetUInt32());
+}
+
+SInt64 SMCValue::GetSInt64() const
+{
+    return std::bit_cast<SInt64>(GetUInt64());
+}
+
+float SMCValue::GetFloat() const
+{
+    float value = 0;
     if (mDataSize == sizeof(float))
     {
-        printf("%.0f ", *reinterpret_cast<const float*>(mBytes.mData));
+        std::memcpy(&value, mBytes.mData, sizeof(value));
     }
+    return value;
 }
 
-void SMCValue::PrintFP1F() const
+bool SMCValue::IsMSB() const
 {
-    if (mDataSize == sizeof(UInt16))
+    if (mDataAttributes & AttributeFlagLSB)
     {
-        printf("%.5f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 32768.0);
+        return false;
     }
+    return true;
 }
 
-void SMCValue::PrintFP4C() const
+bool SMCValue::IsUnsignedInt() const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.5f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 4096.0);
-    }
+    return ((mDataType == DATATYPE_UINT8) ||
+            (mDataType == DATATYPE_UINT16) ||
+            (mDataType == DATATYPE_UINT32) ||
+            (mDataType == DATATYPE_UINT64));
 }
 
-void SMCValue::PrintFP5B() const
+bool SMCValue::IsSignedInt() const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.5f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 2048.0);
-    }
+    return ((mDataType == DATATYPE_SINT8) ||
+            (mDataType == DATATYPE_SINT16) ||
+            (mDataType == DATATYPE_SINT32) ||
+            (mDataType == DATATYPE_SINT64));
 }
 
-void SMCValue::PrintFP6A() const
+void SMCValue::PrintUInt32(UInt32 value) const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.4f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 1024.0);
-    }
+    printf("%u", value);
 }
 
-void SMCValue::PrintFP79() const
+void SMCValue::PrintUInt64(UInt64 value) const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.4f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 512.0);
-    }
+    printf("%llu", value);
 }
 
-void SMCValue::PrintFP88() const
+void SMCValue::PrintSInt32(SInt32 value) const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.3f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 256.0);
-    }
+    printf("%d", value);
 }
 
-void SMCValue::PrintFPA6() const
+void SMCValue::PrintSInt64(SInt64 value) const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.2f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 64.0);
-    }
+    printf("%lld", value);
 }
 
-void SMCValue::PrintFPC4() const
+void SMCValue::PrintFloat(float value) const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.2f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 16.0);
-    }
+    printf("%g", value);
 }
 
-void SMCValue::PrintFPE2() const
+void SMCValue::PrintDouble(double value) const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.2f ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) / 4.0);
-    }
+    printf("%lg", value);
 }
 
-void SMCValue::PrintSP1E() const
+void SMCValue::PrintFlag() const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.5f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 16384.0);
-    }
+    printf("%s", (GetUInt8() != 0) ? "true" : "false");
 }
 
-void SMCValue::PrintSP3C() const
+void SMCValue::PrintCh8p() const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.5f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 4096.0);
-    }
-}
+    std::string str = GetString();
 
-void SMCValue::PrintSP4B() const
-{
-    if (mDataSize == sizeof(UInt16))
+    // trim \0 from right
+    if (!str.empty())
     {
-        printf("%.4f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 2048.0);
+        str.erase(str.find_last_not_of('\0') + 1);
     }
-}
 
-void SMCValue::PrintSP5A() const
-{
-    if (mDataSize == sizeof(UInt16))
+    printf("\"");
+    for (unsigned char c : str)
     {
-        printf("%.4f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 1024.0);
+        printf("%c", (c < 32) ? '.' : c);
     }
-}
-
-void SMCValue::PrintSP69() const
-{
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.3f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 512.0);
-    }
-}
-
-void SMCValue::PrintSP78() const
-{
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.3f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 256.0);
-    }
-}
-
-void SMCValue::PrintSP87() const
-{
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.3f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 128.0);
-    }
-}
-
-void SMCValue::PrintSP96() const
-{
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.2f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 64.0);
-    }
-}
-
-void SMCValue::PrintSPB4() const
-{
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.2f ", SInt16(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))) / 16.0);
-    }
-}
-
-void SMCValue::PrintSPF0() const
-{
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.0f ", float(ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData))));
-    }
-}
-
-void SMCValue::PrintSI8() const
-{
-    if (mDataSize == sizeof(SInt8))
-    {
-        printf("%d ", SInt8(*mBytes.mData));
-    }
-}
-
-void SMCValue::PrintSI16() const
-{
-    if (mDataSize == sizeof(SInt16))
-    {
-        printf("%d ", ntohs(*reinterpret_cast<const SInt16*>(mBytes.mData)));
-    }
+    printf("\"");
 }
 
 void SMCValue::PrintPWM() const
 {
-    if (mDataSize == sizeof(UInt16))
-    {
-        printf("%.1f%% ", ntohs(*reinterpret_cast<const UInt16*>(mBytes.mData)) * 100 / 65536.0);
-    }
+    printf("%g%%", GetUInt16() * 100.0 / 65536.0);
 }
 
 void SMCValue::PrintBytesHex() const
 {
-    mBytes.PrintBytesHex(mDataSize);
+    printf("  (");
+    printf("%s", mBytes.GetHexString(mDataSize, " ").c_str());
+    printf(")\n");
 }
 
 void SMCValue::Print() const
 {
-    printf("  %-4s  [%-4s]  ", mKey.c_str(), mDataType.c_str());
-    if (mDataSize > 0)
+    printf("   %-4s  [%-4s|%02x]  ", mKey.c_str(), mDataType.c_str(), mDataAttributes);
+    if (HasData())
     {
-        if ((mDataType == DATATYPE_UINT8) || (mDataType == DATATYPE_UINT16) || (mDataType == DATATYPE_UINT32))
-            PrintUInt();
-        else if (mDataType == DATATYPE_FLT)
-            PrintFLT();
-        else if (mDataType == DATATYPE_FP1F)
-            PrintFP1F();
-        else if (mDataType == DATATYPE_FP4C)
-            PrintFP4C();
-        else if (mDataType == DATATYPE_FP5B)
-            PrintFP5B();
-        else if (mDataType == DATATYPE_FP6A)
-            PrintFP6A();
-        else if (mDataType == DATATYPE_FP79)
-            PrintFP79();
-        else if (mDataType == DATATYPE_FP88)
-            PrintFP88();
-        else if (mDataType == DATATYPE_FPA6)
-            PrintFPA6();
-        else if (mDataType == DATATYPE_FPC4)
-            PrintFPC4();
-        else if (mDataType == DATATYPE_FPE2)
-            PrintFPE2();
-        else if (mDataType == DATATYPE_SP1E)
-            PrintSP1E();
-        else if (mDataType == DATATYPE_SP3C)
-            PrintSP3C();
-        else if (mDataType == DATATYPE_SP4B)
-            PrintSP4B();
-        else if (mDataType == DATATYPE_SP5A)
-            PrintSP5A();
-        else if (mDataType == DATATYPE_SP69)
-            PrintSP69();
-        else if (mDataType == DATATYPE_SP78)
-            PrintSP78();
-        else if (mDataType == DATATYPE_SP87)
-            PrintSP87();
-        else if (mDataType == DATATYPE_SP96)
-            PrintSP96();
-        else if (mDataType == DATATYPE_SPB4)
-            PrintSPB4();
-        else if (mDataType == DATATYPE_SPF0)
-            PrintSPF0();
-        else if (mDataType == DATATYPE_SI8)
-            PrintSI8();
-        else if (mDataType == DATATYPE_SI16)
-            PrintSI16();
+        if ((mDataType == DATATYPE_UINT8) ||
+            (mDataType == DATATYPE_UINT16) ||
+            (mDataType == DATATYPE_UINT32))
+            PrintUInt32(GetUInt32FromType());
+        else if (mDataType == DATATYPE_UINT64)
+            PrintUInt64(GetUInt64());
+        else if ((mDataType == DATATYPE_SINT8) ||
+                 (mDataType == DATATYPE_SINT16) ||
+                 (mDataType == DATATYPE_SINT32))
+            PrintSInt32(GetSInt32FromType());
+        else if (mDataType == DATATYPE_SINT64)
+            PrintSInt64(GetSInt64());
+        else if ((mDataType == DATATYPE_FLT) ||
+                 (mDataType == DATATYPE_FP1F) ||
+                 (mDataType == DATATYPE_FP4C) ||
+                 (mDataType == DATATYPE_FP5B) ||
+                 (mDataType == DATATYPE_FP6A) ||
+                 (mDataType == DATATYPE_FP79) ||
+                 (mDataType == DATATYPE_FP88) ||
+                 (mDataType == DATATYPE_FPA6) ||
+                 (mDataType == DATATYPE_FPC4) ||
+                 (mDataType == DATATYPE_FPE2) ||
+                 (mDataType == DATATYPE_SP1E) ||
+                 (mDataType == DATATYPE_SP3C) ||
+                 (mDataType == DATATYPE_SP4B) ||
+                 (mDataType == DATATYPE_SP5A) ||
+                 (mDataType == DATATYPE_SP69) ||
+                 (mDataType == DATATYPE_SP78) ||
+                 (mDataType == DATATYPE_SP87) ||
+                 (mDataType == DATATYPE_SP96) ||
+                 (mDataType == DATATYPE_SPB4) ||
+                 (mDataType == DATATYPE_SPF0))
+            PrintFloat(GetFloatFromType());
+        else if (mDataType == DATATYPE_IOFT)
+            PrintDouble(GetDoubleFromType());
+        else if (mDataType == DATATYPE_FLAG)
+            PrintFlag();
+        else if (mDataType == DATATYPE_CH8P)
+            PrintCh8p();
         else if (mDataType == DATATYPE_PWM)
             PrintPWM();
+        else if (mDataType == DATATYPE_HEX)
+            printf("#%zu", mDataSize);
+        else
+            printf("? #%zu", mDataSize);
 
         PrintBytesHex();
     }
@@ -338,18 +489,18 @@ void SMCValue::Print() const
 
 #pragma mark SMCUtils
 
-UInt32 SMCUtils::GetUInt32(const std::string& str)
+UInt32 SMCUtils::StringToUInt32(const std::string& str)
 {
     UInt32 value = 0;
     size_t size = std::min(str.length(), sizeof(value));
     for (size_t i = 0; i < size; i++)
     {
-        value += (UInt32(str[i]) << ((size - i - 1) * 8));
+        value += (UInt32(static_cast<unsigned char>(str[i])) << ((size - i - 1) * 8));
     }
     return value;
 }
 
-std::string SMCUtils::GetString(UInt32 value)
+std::string SMCUtils::UInt32ToString(UInt32 value)
 {
     std::string str(sizeof(value), 0);
     for (size_t i = 0; i < sizeof(value); i++)
@@ -377,6 +528,11 @@ SInt32 SMCUtils::HexCharToInt(char c)
     return value;
 }
 
+bool SMCUtils::IsKeySizeValid(const std::string& key)
+{
+    return (key.length() == sizeof(SMCKeyData::mKey));
+}
+
 #pragma mark SMCTool
 
 SMCManager::~SMCManager()
@@ -388,10 +544,10 @@ bool SMCManager::Open()
 {
     if (mConn == 0)
     {
-        io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"));
+        io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(std::string(SMCServiceName).c_str()));
         if (service == IO_OBJECT_NULL)
         {
-            printf("Error: IOServiceGetMatchingServices() failed\n");
+            printf("Error: SMCManager IOServiceGetMatchingServices() failed\n");
         }
         else
         {
@@ -399,13 +555,13 @@ bool SMCManager::Open()
             IOObjectRelease(service);
             if (result != KERN_SUCCESS)
             {
-                printf("Error: IOServiceOpen() = %08x\n", result);
+                printf("Error: SMCManager IOServiceOpen() = %08x\n", result);
             }
         }
     }
     else
     {
-        printf("Info: AppleSMC is already open");
+        printf("Info: SMCManager is already open\n");
     }
     return (mConn != 0);
 }
@@ -424,82 +580,115 @@ bool SMCManager::IsOpen() const
     return (mConn != 0);
 }
 
-bool SMCManager::WriteKey(const std::string& key, UInt8 value)
+bool SMCManager::ReadKey(const std::string& key, SMCValue& returnValue)
 {
-    bool ret = false;
+    bool success = false;
     if (mConn != 0)
     {
-        SMCValue writeValue;
-        writeValue.mKey = key;
-        writeValue.mBytes.mData[0] = value;
-        writeValue.mDataSize = sizeof(value);
-
-        kern_return_t result = WriteValue(writeValue);
-        if (result != kIOReturnSuccess)
+        if (!SMCUtils::IsKeySizeValid(key))
         {
-            printf("Error: SMCWriteKey() = %08x\n", result);
+            printf("Error: SMCManager ReadKey(\"%s\") inavlid key\n", key.c_str());
         }
         else
         {
-            ret = true;
+            kern_return_t result = ReadKeyRaw(key, returnValue);
+            if (result != kIOReturnSuccess)
+            {
+                printf("Error: SMCManager ReadKey(\"%s\") = %08x\n", key.c_str(), result);
+            }
+            else
+            {
+                success = true;
+            }
         }
     }
     else
     {
-        printf("Error: AppleSMC not ready, initialize with Open()");
+        printf("Error: SMCManager not ready, initialize with Open()\n");
     }
-    return ret;
+    return success;
+}
+
+bool SMCManager::WriteKey(const std::string& key, UInt8 value)
+{
+    SMCBytes data;
+    data.mData[0] = value;
+    SMCValue writeValue;
+    writeValue.mKey = key;
+    writeValue.SetData(data, sizeof(value));
+    return WriteValue(writeValue);
 }
 
 bool SMCManager::WriteKey(const std::string& key, const std::string& hexString)
 {
-    bool ret = false;
+    SMCValue writeValue;
+    if (writeValue.SetHexString(hexString) > 0)
+    {
+        writeValue.mKey = key;
+        return WriteValue(writeValue);
+    }
+    else
+    {
+        printf("Error: SMCManager invalid hex string\n");
+    }
+    return false;
+}
+
+bool SMCManager::WriteValue(const SMCValue& writeValue)
+{
+    bool success = false;
     if (mConn != 0)
     {
-        SMCValue writeValue;
-        size_t numBytes = writeValue.mBytes.SetHexString(hexString);
-        if (numBytes > 0)
+        if (!writeValue.IsKeySizeValid())
         {
-            writeValue.mKey = key;
-            writeValue.mDataSize = UInt32(numBytes);
-
-            kern_return_t result = WriteValue(writeValue);
+            printf("Error: SMCManager WriteValue() inavlid key \"%s\"\n", writeValue.mKey.c_str());
+        }
+        else
+        {
+            kern_return_t result = WriteValueRaw(writeValue);
             if (result != kIOReturnSuccess)
             {
-                printf("Error: SMCWriteKey() = %08x\n", result);
+                printf("Error: SMCManager WriteValue() = %08x\n", result);
             }
             else
             {
-                ret = true;
+                success = true;
             }
         }
     }
     else
     {
-        printf("Error: AppleSMC not ready, initialize with Open()");
+        printf("Error: SMCManager not ready, initialize with Open()\n");
     }
-    return ret;
+    return success;
 }
 
-kern_return_t SMCManager::ReadKey(const std::string& key, SMCValue& returnValue)
+kern_return_t SMCManager::ReadKeyRaw(const std::string& key, SMCValue& returnValue)
 {
+    returnValue.mKey = key;
     SMCKeyData keyData;
-    keyData.mKey = SMCUtils::GetUInt32(key);
+    keyData.mKey = SMCUtils::StringToUInt32(key);
     SMCKeyData returnData;
     kern_return_t result = GetKeyInfo(keyData.mKey, returnData.mKeyInfo);
     if (result == kIOReturnSuccess)
     {
-        returnValue.mKey = key;
-        returnValue.mDataSize = returnData.mKeyInfo.mDataSize;
-        returnValue.mDataType = SMCUtils::GetString(returnData.mKeyInfo.mDataType);
-        keyData.mKeyInfo.mDataSize = returnValue.mDataSize;
-        keyData.mCommand = SMC_CMD_READ_BYTES;
+        returnValue.mDataType = SMCUtils::UInt32ToString(returnData.mKeyInfo.mDataType);
+        returnValue.mDataAttributes = returnData.mKeyInfo.mDataAttributes;
+        returnValue.SetDataSize(returnData.mKeyInfo.mDataSize);
 
-        result = IOConnectCall(KERNEL_INDEX_SMC, keyData, returnData);
+        keyData.mKeyInfo.mDataSize = SInt32(returnValue.GetDataSize());
+        keyData.mCommand = SMC_CMD_READ_BYTES;
+        result = IOConnectCall(keyData, returnData);
         if (result == kIOReturnSuccess)
         {
-            returnValue.mBytes = returnData.mBytes;
+            returnValue.SetDataBytes(returnData.mBytes);
         }
+    }
+    else
+    {
+        returnValue.mDataType.clear();
+        returnValue.mDataAttributes = 0;
+        returnValue.SetDataSize(0);
     }
     return result;
 }
@@ -507,7 +696,6 @@ kern_return_t SMCManager::ReadKey(const std::string& key, SMCValue& returnValue)
 kern_return_t SMCManager::GetKeyInfo(UInt32 key, SMCKeyDataKeyInfo& keyInfo)
 {
     kern_return_t result = kIOReturnSuccess;
-    os_unfair_lock_lock(&mLock);
 
     KeyInfoMapT::iterator iter = mCacheItems.find(key);
     if (iter != mCacheItems.end())
@@ -521,45 +709,43 @@ kern_return_t SMCManager::GetKeyInfo(UInt32 key, SMCKeyDataKeyInfo& keyInfo)
         keyData.mCommand = SMC_CMD_READ_KEYINFO;
 
         SMCKeyData returnData;
-        result = IOConnectCall(KERNEL_INDEX_SMC, keyData, returnData);
+        result = IOConnectCall(keyData, returnData);
         if (result == kIOReturnSuccess)
         {
             keyInfo = returnData.mKeyInfo;
             mCacheItems[key] = keyInfo;
         }
     }
-
-    os_unfair_lock_unlock(&mLock);
     return result;
 }
 
-kern_return_t SMCManager::WriteValue(const SMCValue& writeVal)
+kern_return_t SMCManager::WriteValueRaw(const SMCValue& writeVal)
 {
     SMCValue readVal;
-    kern_return_t result = ReadKey(writeVal.mKey, readVal);
+    kern_return_t result = ReadKeyRaw(writeVal.mKey, readVal);
     if (result == kIOReturnSuccess)
     {
-        if (readVal.mDataSize != writeVal.mDataSize)
+        if (readVal.GetDataSize() != writeVal.GetDataSize())
         {
             result = kIOReturnError;
         }
         else
         {
             SMCKeyData keyData;
-            keyData.mKey = SMCUtils::GetUInt32(writeVal.mKey);
+            keyData.mKey = SMCUtils::StringToUInt32(writeVal.mKey);
             keyData.mCommand = SMC_CMD_WRITE_BYTES;
-            keyData.mKeyInfo.mDataSize = writeVal.mDataSize;
-            keyData.mBytes = writeVal.mBytes;
+            keyData.mKeyInfo.mDataSize = UInt32(writeVal.GetDataSize());
+            keyData.mBytes = writeVal.GetDataBytes();
 
             SMCKeyData returnData;
-            result = IOConnectCall(KERNEL_INDEX_SMC, keyData, returnData);
+            result = IOConnectCall(keyData, returnData);
         }
     }
     return result;
 }
 
-kern_return_t SMCManager::IOConnectCall(SMCSelector index, const SMCKeyData& keyData, SMCKeyData& returnData)
+kern_return_t SMCManager::IOConnectCall(const SMCKeyData& keyData, SMCKeyData& returnData)
 {
     size_t returnDataSize = sizeof(returnData);
-    return IOConnectCallStructMethod(mConn, index, &keyData, sizeof(keyData), &returnData, &returnDataSize);
+    return IOConnectCallStructMethod(mConn, KERNEL_INDEX_SMC, &keyData, sizeof(keyData), &returnData, &returnDataSize);
 }
