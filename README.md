@@ -6,9 +6,11 @@
 A macOS tool to control the MagSafe LED on Apple Silicon Macs.
 It adjusts the MagSafe light based on screen activity and charging status.
 
-macOS sets the MagSafe LED to green only when the battery reaches 100%. If a charging limit (e.g., 80%) is active, the LED remains orange indefinitely. This tool sets the LED to green as soon as the battery stops charging.
+If your MacBook screen is off or the lid is closed, the MagSafe LED stays on.  
+This tool can automatically turn off the LED in these situations to keep your room dark.
 
-Additionally, if your MacBook screen is off or the lid is closed, the MagSafe LED often stays on. This tool can automatically turn off the LED in these situations to keep your room dark.
+macOS 26.4 and earlier sets the MagSafe LED to green only when the battery reaches 100%. If a charging limit (e.g., 80%) is active, the LED remains orange indefinitely.  
+This tool sets the LED to green as soon as the battery stops charging.
 
 ## Features
 - **Apple Silicon Native:** Specifically designed for modern Mac hardware.
@@ -35,14 +37,14 @@ You can easily manage the service without using the terminal:
 ## Installation
 
 ### 1. Download (Recommended)
-Download the latest `MagSafeLed_V1.1.pkg` from the **[Releases](../../releases)** section.
+Download the latest `MagSafeLed_V1.2.pkg` from the **[Releases](../../releases)** section.
 
 ### 2. Fix Permissions (Important)
 Since this tool uses IOKit for hardware access and is not notarized, macOS will block the execution by default.
 To fix this, run the following command in your terminal after downloading:
 
 ```bash
-xattr -c ~/Downloads/MagSafeLed_V1.1.pkg
+xattr -c ~/Downloads/MagSafeLed_V1.2.pkg
 ```
 
 ### 3. Install

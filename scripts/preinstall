@@ -7,22 +7,22 @@ DAEMON="at.GreatAndy.$APPNAME"
 DAEMONPLIST="$DAEMON.plist"
 TEMP_PLIST="/tmp/$DAEMONPLIST"
 
-# Get color option
-COLOR_OPTIONS='{"🟢 Green   (--green)", "➖ No action"}'
-COLOR_CHOICE=$(osascript -e "set clist to $COLOR_OPTIONS" -e "set default_val to item 1 of clist" \
-               -e "tell app (path to frontmost application as text) to choose from list clist \
-               with title \"MagSafeLed configuration\" with prompt \"Select LED color if not charging\" default items {default_val}")
-if [ "$COLOR_CHOICE" = "false" ]; then
-    echo "Cancel install."
-    exit 1
-fi
-
 # Get sleep option
 SLEEP_OPTIONS='{"🟡 Off if not charging   (--full)", "⚪ Always off                (--sleep)", "➖ No action"}'
 SLEEP_CHOICE=$(osascript -e "set clist to $SLEEP_OPTIONS" -e "set default_val to item 1 of clist" \
                -e "tell app (path to frontmost application as text) to choose from list clist \
                with title \"MagSafeLed configuration\" with prompt \"Select LED status when display is sleeping\" default items {default_val}")
 if [ "$SLEEP_CHOICE" = "false" ]; then
+    echo "Cancel install."
+    exit 1
+fi
+
+# Get color option
+COLOR_OPTIONS='{"🟢 Green   (--green)", "➖ No action"}'
+COLOR_CHOICE=$(osascript -e "set clist to $COLOR_OPTIONS" -e "set default_val to item 2 of clist" \
+               -e "tell app (path to frontmost application as text) to choose from list clist \
+               with title \"MagSafeLed configuration\" with prompt \"Select LED color if not charging\" default items {default_val}")
+if [ "$COLOR_CHOICE" = "false" ]; then
     echo "Cancel install."
     exit 1
 fi

@@ -3,7 +3,7 @@ NAME			:= MagSafeLed
 IDENTIFIER		:= at.GreatAndy.MagSafeLed
 # Version (Tag + commit-counter, excluding hash, including dirty-flag)
 GIT_VER 		:= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/-g[0-9a-f]\{7,40\}//')
-VERSION 		:= $(if $(GIT_VER),$(GIT_VER),V0.0-unknown)
+VERSION 		:= $(if $(GIT_VER),$(GIT_VER),V1.2-local)
 INSTALL_PATH	:= /usr/local/bin
 
 # Compiler & flags

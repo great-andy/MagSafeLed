@@ -22,9 +22,9 @@ int main(int argc, char* const* argv)
 {
     @autoreleasepool
     {
-        NSApplication* application = [NSApplication sharedApplication];
         MagSafeLed* magSafeLed = [[MagSafeLed alloc] init];
         [magSafeLed ParseOptions:argc argV:argv];
+        NSApplication* application = [NSApplication sharedApplication];
         application.delegate = magSafeLed;
         [application run];
     }

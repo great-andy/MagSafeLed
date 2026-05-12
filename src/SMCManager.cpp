@@ -533,7 +533,7 @@ bool SMCUtils::IsKeySizeValid(const std::string& key)
     return (key.length() == sizeof(SMCKeyData::mKey));
 }
 
-#pragma mark SMCTool
+#pragma mark SMCManager
 
 SMCManager::~SMCManager()
 {
@@ -665,26 +665,34 @@ bool SMCManager::WriteValue(const SMCValue& writeValue)
 
 kern_return_t SMCManager::ReadKeyRaw(const std::string& key, SMCValue& returnValue)
 {
+    kern_return_t result = kIOReturnError;
     returnValue.mKey = key;
-    SMCKeyData keyData;
-    keyData.mKey = SMCUtils::StringToUInt32(key);
-    SMCKeyData returnData;
-    kern_return_t result = GetKeyInfo(keyData.mKey, returnData.mKeyInfo);
-    if (result == kIOReturnSuccess)
+    if (!SMCUtils::IsKeySizeValid(key))
     {
-        returnValue.mDataType = SMCUtils::UInt32ToString(returnData.mKeyInfo.mDataType);
-        returnValue.mDataAttributes = returnData.mKeyInfo.mDataAttributes;
-        returnValue.SetDataSize(returnData.mKeyInfo.mDataSize);
-
-        keyData.mKeyInfo.mDataSize = SInt32(returnValue.GetDataSize());
-        keyData.mCommand = SMC_CMD_READ_BYTES;
-        result = IOConnectCall(keyData, returnData);
-        if (result == kIOReturnSuccess)
-        {
-            returnValue.SetDataBytes(returnData.mBytes);
-        }
+        printf("Error: SMCManager ReadKeyRaw() inavlid key \"%s\"\n", key.c_str());
     }
     else
+    {
+        SMCKeyData keyData;
+        keyData.mKey = SMCUtils::StringToUInt32(key);
+        SMCKeyData returnData;
+        result = GetKeyInfo(keyData.mKey, returnData.mKeyInfo);
+        if (result == kIOReturnSuccess)
+        {
+            returnValue.mDataType = SMCUtils::UInt32ToString(returnData.mKeyInfo.mDataType);
+            returnValue.mDataAttributes = returnData.mKeyInfo.mDataAttributes;
+            returnValue.SetDataSize(returnData.mKeyInfo.mDataSize);
+
+            keyData.mKeyInfo.mDataSize = SInt32(returnValue.GetDataSize());
+            keyData.mCommand = SMC_CMD_READ_BYTES;
+            result = IOConnectCall(keyData, returnData);
+            if (result == kIOReturnSuccess)
+            {
+                returnValue.SetDataBytes(returnData.mBytes);
+            }
+        }
+    }
+    if (result != kIOReturnSuccess)
     {
         returnValue.mDataType.clear();
         returnValue.mDataAttributes = 0;
